@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location-based Audio Web App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #app {
+            text-align: center;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #status {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>Location-based Audio Web App</h1>
+        <button id="startButton">Start</button>
+        <button id="stopButton">Stop</button>
+        <div id="status">Click Start to begin</div>
+    </div>
+
+    <script>
+        let audioContext;
+        let oscillator;
+        let isPlaying = false;
+
+        const locations = [
+            { name: "New York City", lat: 40.7128, lon: -74.0060, freq: 440, type: "sine" },
+            { name: "London", lat: 51.5074, lon: -0.1278, freq: 500, type: "sawtooth" },
+            { name: "Tokyo", lat: 35.6762, lon: 139.6503, freq: 350, type: "square" }
+        ];
+
+        function distance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth's radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function getNearestLocation(lat, lon) {
+            let nearest = locations[0];
+            let minDistance = distance(lat, lon, nearest.lat, nearest.lon);
+
+            for (let i = 1; i < locations.length; i++) {
+                const d = distance(lat, lon, locations[i].lat, locations[i].lon);
+                if (d < minDistance) {
+                    minDistance = d;
+                    nearest = locations[i];
+                }
+            }
+
+            return nearest;
+        }
+
+        function startAudio(type, frequency) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            oscillator = audioContext.createOscillator();
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            oscillator.connect(audioContext.destination);
+            oscillator.start();
+            isPlaying = true;
+        }
+
+        function stopAudio() {
+            if (oscillator) {
+                oscillator.stop();
+                isPlaying = false;
+            }
+        }
+
+        function updateAudio(position) {
+            const { latitude, longitude } = position.coords;
+            const nearest = getNearestLocation(latitude, longitude);
+            
+            document.getElementById('status').textContent = `Nearest location: ${nearest.name}`;
+
+            if (isPlaying) {
+                stopAudio();
+            }
+            startAudio(nearest.type, nearest.freq);
+        }
+
+        document.getElementById('startButton').addEventListener('click', () => {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition(updateAudio, 
+                    (error) => {
+                        document.getElementById('status').textContent = "Error: " + error.message;
+                    },
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+                );
+            } else {
+                document.getElementById('status').textContent = "Geolocation is not supported by your browser";
+            }
+        });
+
+        document.getElementById('stopButton').addEventListener('click', () => {
+            stopAudio();
+            document.getElementById('status').textContent = "Audio stopped";
+        });
+    </script>
+</body>
+</html>
