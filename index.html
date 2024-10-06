@@ -3,127 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Location-based Audio Web App</title>
+    <title>PLH Audio Tour</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+        body, html {
             margin: 0;
-            background-color: #f0f0f0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
         }
-        #app {
-            text-align: center;
-            background-color: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        #map {
+            height: 100%;
+            width: 100%;
         }
-        button {
-            margin: 10px;
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
+        .pulse {
+            position: absolute;
+            background: rgba(51, 153, 255, 0.9);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: pulse 2s infinite;
         }
-        #status {
-            margin-top: 20px;
-            font-weight: bold;
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.5);
+                opacity: 0.5;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 0;
+            }
         }
     </style>
 </head>
 <body>
-    <div id="app">
-        <h1>Location-based Audio Web App</h1>
-        <button id="startButton">Start</button>
-        <button id="stopButton">Stop</button>
-        <div id="status">Click Start to begin</div>
-    </div>
-
+    <div id="map"></div>
     <script>
-        let audioContext;
-        let oscillator;
-        let isPlaying = false;
-
         const locations = [
-            { name: "New York City", lat: 40.7128, lon: -74.0060, freq: 440, type: "sine" },
-            { name: "London", lat: 51.5074, lon: -0.1278, freq: 500, type: "sawtooth" },
-            { name: "Tokyo", lat: 35.6762, lon: 139.6503, freq: 350, type: "square" }
+            {name: "PLH 2 north gate", lat: 22.796938, lon: 114.686742, audio: "https://cdn.glitch.global/951b8b40-2b50-4a1e-b67e-f31da000f100/northgate.mp3"}, 
+            {name: "PLH 2 west gate", lat: 22.792443, lon: 114.682982, audio: "https://cdn.glitch.global/951b8b40-2b50-4a1e-b67e-f31da000f100/westgate.mp3"}, 
+            {name: "PLH 2 cinema", lat: 22.793313, lon: 114.685934, audio: "https://cdn.glitch.global/951b8b40-2b50-4a1e-b67e-f31da000f100/cinema.mp3"}, 
+            {name: "Red Machine", lat: 22.797149, lon: 114.691960, audio: "https://cdn.glitch.global/951b8b40-2b50-4a1e-b67e-f31da000f100/redmachine.mp3"}, 
+            {name: "Bohemia", lat: 22.793731, lon: 114.704300, audio: "https://cdn.glitch.global/951b8b40-2b50-4a1e-b67e-f31da000f100/bohemia.mp3"} 
         ];
 
-        function distance(lat1, lon1, lat2, lon2) {
-            const R = 6371; // Earth's radius in km
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
+        const map = L.map('map', {
+            center: [22.794, 114.689],
+            zoom: 15,
+            zoomControl: false,
+            dragging: true,
+            touchZoom: true,
+            scrollWheelZoom: true,
+            doubleClickZoom: true,
+            boxZoom: true,
+            keyboard: true
+        });
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        locations.forEach(location => {
+            L.marker([location.lat, location.lon])
+                .addTo(map)
+                .bindPopup(location.name);
+        });
+
+        let userMarker;
+        let watchId;
+        let currentAudio;
+
+        function onLocationFound(e) {
+            const radius = e.accuracy / 2;
+
+            if (userMarker) {
+                map.removeLayer(userMarker);
+            }
+
+            userMarker = L.circle(e.latlng, {
+                color: 'blue',
+                fillColor: '#3388ff',
+                fillOpacity: 0.9,
+                radius: 15
+            }).addTo(map);
+
+            // Create pulsing effect
+            const pulse = document.createElement('div');
+            pulse.className = 'pulse';
+            pulse.style.width = `${radius}px`;
+            pulse.style.height = `${radius}px`;
+            pulse.style.left = `${map.latLngToContainerPoint(e.latlng).x - radius / 2}px`;
+            pulse.style.top = `${map.latLngToContainerPoint(e.latlng).y - radius / 2}px`;
+            document.body.appendChild(pulse);
+
+            checkProximity(e.latlng);
         }
 
-        function getNearestLocation(lat, lon) {
-            let nearest = locations[0];
-            let minDistance = distance(lat, lon, nearest.lat, nearest.lon);
+        function onLocationError(e) {
+            alert(e.message);
+        }
 
-            for (let i = 1; i < locations.length; i++) {
-                const d = distance(lat, lon, locations[i].lat, locations[i].lon);
-                if (d < minDistance) {
-                    minDistance = d;
-                    nearest = locations[i];
+        function checkProximity(userLocation) {
+            locations.forEach(location => {
+                const distance = map.distance(userLocation, [location.lat, location.lon]);
+                if (distance < 50) {
+                    playAudio(location.audio);
                 }
-            }
-
-            return nearest;
+            });
         }
 
-        function startAudio(type, frequency) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            oscillator = audioContext.createOscillator();
-            oscillator.type = type;
-            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-            oscillator.connect(audioContext.destination);
-            oscillator.start();
-            isPlaying = true;
+        function playAudio(audioFile) {
+            if (currentAudio) {
+                currentAudio.pause();
+            }
+            currentAudio = new Audio(audioFile);
+            currentAudio.play();
         }
 
-        function stopAudio() {
-            if (oscillator) {
-                oscillator.stop();
-                isPlaying = false;
-            }
+        map.on('locationfound', onLocationFound);
+        map.on('locationerror', onLocationError);
+
+        function startTracking() {
+            map.locate({watch: true});
         }
 
-        function updateAudio(position) {
-            const { latitude, longitude } = position.coords;
-            const nearest = getNearestLocation(latitude, longitude);
-            
-            document.getElementById('status').textContent = `Nearest location: ${nearest.name}`;
-
-            if (isPlaying) {
-                stopAudio();
-            }
-            startAudio(nearest.type, nearest.freq);
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(function(position) {
+                startTracking();
+            }, function(error) {
+                alert("Please enable location services to use this app.");
+            });
+        } else {
+            alert("Geolocation is not supported by your browser.");
         }
-
-        document.getElementById('startButton').addEventListener('click', () => {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.watchPosition(updateAudio, 
-                    (error) => {
-                        document.getElementById('status').textContent = "Error: " + error.message;
-                    },
-                    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
-                );
-            } else {
-                document.getElementById('status').textContent = "Geolocation is not supported by your browser";
-            }
-        });
-
-        document.getElementById('stopButton').addEventListener('click', () => {
-            stopAudio();
-            document.getElementById('status').textContent = "Audio stopped";
-        });
     </script>
 </body>
 </html>
